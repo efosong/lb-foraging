@@ -72,6 +72,7 @@ class ForagingEnvLite(ParallelEnv):
             penalty=0.0,
             render_mode="rgb_array",
             render_style="simple",
+            action_mode="full",
         ):
         # TODO sight = None, etc
         self.logger = logging.getLogger(__name__)
@@ -96,6 +97,8 @@ class ForagingEnvLite(ParallelEnv):
                 self.agent_colors[self.possible_agents[i]] = agent_color
             else:
                 self.agent_colors[self.possible_agents[i]] = ImageColor.getrgb(agent_color)
+
+        self.action_mode = action_mode
 
 
         self.field = np.zeros(field_size, np.int32)
@@ -174,7 +177,10 @@ class ForagingEnvLite(ParallelEnv):
 
     @functools.lru_cache(maxsize=None)
     def action_space(self, agent):
-        return gymnasium.spaces.Discrete(6)
+        if self.action_mode == "full":
+            return gymnasium.spaces.Discrete(6)
+        elif self.action_mode == "4action":
+            return gymnasium.spaces.Discrete(5)
 
     @property
     def action_spaces(self):
@@ -313,30 +319,21 @@ class ForagingEnvLite(ParallelEnv):
         row_pos_min, col_pos_min = (0, 0)
         row_pos_max, col_pos_max = (self.rows-1, self.cols-1)
         if action == Action.NORTH:
-            return (
-                row_pos > row_pos_min
-                and self.field[row_pos-1, col_pos] == 0
-            )
+            new_pos = (row_pos-1, col_pos)
         if action == Action.SOUTH:
-            return (
-                row_pos < row_pos_max
-                and self.field[row_pos+1, col_pos] == 0
-            )
+            new_pos = (row_pos+1, col_pos)
         if action == Action.WEST:
-            return (
-                col_pos > col_pos_min
-                and self.field[row_pos, col_pos-1] == 0
-            )
+            new_pos = (row_pos, col_pos-1)
         if action == Action.EAST:
-            return (
-                col_pos < col_pos_max
-                and self.field[row_pos, col_pos+1] == 0
-            )
+            new_pos = (row_pos, col_pos+1)
         if action == Action.LOAD:
-            return self.adjacent_food(*self.pos[agent]) > 0
+            return (self.action_mode=="full") and (self.adjacent_food(*self.pos[agent]) > 0)
 
-        self.logger.error("Undefined action {} from {}".format(action, agent))
-        raise ValueError("Undefined action")
+        return (
+                (row_pos_min <= new_pos[0] <= row_pos_max)
+                and (col_pos_min <= new_pos[1] <= col_pos_max)
+                and (self.action_mode=="4action" or self.field[new_pos] == 0)
+            )
 
     def _transform_to_neighborhood(self, center, sight, position):
         return (
@@ -382,19 +379,25 @@ class ForagingEnvLite(ParallelEnv):
 
         # so check for collisions
         for agent, action in actions.items():
+            # compute the new position
             if action == Action.NONE:
-                collisions[tuple(self.pos[agent])].append(agent)
+                new_pos = tuple(self.pos[agent])
             elif action == Action.NORTH:
-                collisions[(self.pos[agent][0] - 1, self.pos[agent][1])].append(agent)
+                new_pos = (self.pos[agent][0] - 1, self.pos[agent][1])
             elif action == Action.SOUTH:
-                collisions[(self.pos[agent][0] + 1, self.pos[agent][1])].append(agent)
+                new_pos = (self.pos[agent][0] + 1, self.pos[agent][1])
             elif action == Action.WEST:
-                collisions[(self.pos[agent][0], self.pos[agent][1] - 1)].append(agent)
+                new_pos = (self.pos[agent][0], self.pos[agent][1] - 1)
             elif action == Action.EAST:
-                collisions[(self.pos[agent][0], self.pos[agent][1] + 1)].append(agent)
+                new_pos = (self.pos[agent][0], self.pos[agent][1] + 1)
             elif action == Action.LOAD:
-                collisions[tuple(self.pos[agent])].append(agent)
+                new_pos = tuple(self.pos[agent])
+            if action == Action.LOAD:
                 loading_agents.add(agent)
+            elif (self.action_mode == "4action") and (self.field[new_pos] > 0):
+                new_pos = tuple(self.pos[agent])
+                loading_agents.add(agent)
+            collisions[new_pos].append(agent)
 
         # and do movements for non colliding agents
         for pos, agents in collisions.items():
