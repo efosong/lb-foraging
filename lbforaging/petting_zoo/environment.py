@@ -67,7 +67,9 @@ class ForagingEnvLite(ParallelEnv):
             player_levels=[],
             food_levels=[],
             agent_colors=[],
-            normalize_reward=True,
+            common_reward=False,
+            split_food_reward=True,
+            normalize_total_reward=False,
             grid_observation=False,
             penalty=0.0,
             render_mode="rgb_array",
@@ -117,7 +119,9 @@ class ForagingEnvLite(ParallelEnv):
         self._valid_actions = None
         self._max_cycles = max_cycles
 
-        self._normalize_reward = normalize_reward
+        self._use_common_reward = common_reward
+        self._split_food_reward = split_food_reward
+        self._normalize_total_reward = normalize_total_reward
         self._grid_observation = grid_observation
 
         self.viewer = None
@@ -428,12 +432,19 @@ class ForagingEnvLite(ParallelEnv):
                 continue
 
             # else the food was loaded and each agent scores points
-            for a in adj_agents:
-                rewards[a] = float(self.agent_levels[a] * food)
-                if self._normalize_reward:
-                    rewards[a] = rewards[a] / float(
-                        adj_agent_level * self._food_spawned
-                    )  # normalize reward
+            if self._use_common_reward:
+                for a in self.agents:
+                    rewards[a] += float(food)
+                    if self._normalize_total_reward:
+                        rewards[a] /= (self._food_spawned * len(self.agents))
+            else:
+                for a in adj_agents:
+                    rewards[a] = float(self.agent_levels[a] * food)
+                    if self._split_food_reward:
+                        rewards[a] /= float(adj_agent_level)
+                    if self._normalize_total_reward:
+                        rewards[a] /= float(self._food_spawned)
+
             # and the food is removed
             self.field[frow, fcol] = 0
 
