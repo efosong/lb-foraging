@@ -279,7 +279,6 @@ class ForagingEnvLite(ParallelEnv):
                 # check if it has neighbors:
                 if (
                     self.neighborhood(row, col).sum() > 0
-                    or self.neighborhood(row, col, distance=2, ignore_diag=True) > 0
                     or not self._is_empty_location(row, col)
                 ):
                     continue
