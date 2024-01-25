@@ -75,10 +75,11 @@ class ForagingEnvLite(ParallelEnv):
             render_mode="rgb_array",
             render_style="simple",
             action_mode="full",
+            seed=None,
         ):
         # TODO sight = None, etc
         self.logger = logging.getLogger(__name__)
-        self.seed()
+        self.rng = np.random.default_rng(seed)
 
         self.possible_agents = [f"player_{i}" for i in range(n_players)]
         self.agent_name_mapping = {name: i for i, name in enumerate(self.possible_agents)}
@@ -129,8 +130,8 @@ class ForagingEnvLite(ParallelEnv):
         self.render_style = render_style
 
     def seed(self, seed=None):
-        self.np_random, seed = seeding.np_random(seed)
-        return [seed]
+        if seed is not None:
+            self.rng = np.random.default_rng(seed)
 
     @functools.lru_cache(maxsize=None)
     def observation_space(self, agent):
@@ -273,8 +274,8 @@ class ForagingEnvLite(ParallelEnv):
         for food_level in self.specified_food_levels:
             while attempts < 1000:
                 attempts += 1
-                row = self.np_random.integers(1, self.rows - 1)
-                col = self.np_random.integers(1, self.cols - 1)
+                row = self.rng.integers(1, self.rows - 1)
+                col = self.rng.integers(1, self.cols - 1)
 
                 # check if it has neighbors:
                 if (
@@ -285,7 +286,7 @@ class ForagingEnvLite(ParallelEnv):
 
                 self.field[row, col] = (food_level 
                                         if food_level is not None 
-                                        else self.np_random.integers(min_level, max_level+1)
+                                        else self.rng.integers(min_level, max_level+1)
                                         )
                 break
         self._food_spawned = self.field.sum()
@@ -301,15 +302,15 @@ class ForagingEnvLite(ParallelEnv):
     def spawn_agents(self, max_agent_level):
         possible_indices = np.arange(self.field_length)[self.field.flatten()==0]
         num_agents_to_spawn = len(self.agents)
-        spawn_indices = self.np_random.choice(possible_indices,
-                                              size=num_agents_to_spawn,
-                                              replace=False)
+        spawn_indices = self.rng.choice(possible_indices,
+                                        size=num_agents_to_spawn,
+                                        replace=False)
         unraveled_indices = np.unravel_index(spawn_indices, shape=self.field_size)
         unraveled_indices = list(zip(*unraveled_indices))
         for i, agent in enumerate(self.agents):
             self.pos[agent] = unraveled_indices[i]
             if self.specified_agent_levels[agent] is None:
-                self.agent_levels[agent] = self.np_random.integers(1, max_agent_level + 1)
+                self.agent_levels[agent] = self.rng.integers(1, max_agent_level + 1)
             else:
                 self.agent_levels[agent] = min(self.specified_agent_levels[agent], max_agent_level)
 
@@ -349,8 +350,7 @@ class ForagingEnvLite(ParallelEnv):
         return self._valid_actions[agent]
 
     def reset(self, seed=None, return_info=False, options=None):
-        if seed is not None:
-            self.seed(seed=seed)
+        self.seed(seed=seed)
         self.field = np.zeros(self.field_size, np.int32)
         self.agents = copy(self.possible_agents)
         self.spawn_agents(self.max_agent_level)
